@@ -4,8 +4,6 @@ import numpy as np
 import random
 import numpy.linalg as LA
 
-#from Classifier_Hist_Bayes_2D import (buildBayesianClassifier, predictWithBayesian)
-
 def vectortoimg(v,show=True):
     plt.imshow(v.reshape(48, 48),interpolation='None', cmap='gray')
     plt.axis('off')
@@ -17,7 +15,7 @@ def vectortoimg(v,show=True):
 # Returns:   Mean vector of X
 #            Eigen vectors, as rows, with max on top
 #            Principal components of X
-def performPCA(X, T):
+def performPCA(X, T, showScatterPlot=False):
     # PERFORM the XZCVP process
     # X -> Z
     muX = np.mean(X, axis=0) # get means of columns, by setting axis=0
@@ -38,16 +36,17 @@ def performPCA(X, T):
     P = np.dot(Z, V.T) # Nxd DOT dxd = Nxd
 
     # Draw SCATTER PLOT
-    # reducedP = P[:, 0:2]
-    # fig = plt.figure()
-    # ax = fig.add_subplot(111, facecolor='black')
-    #
-    # for digit in np.unique(T):
-    #     ix = np.where(T == digit)
-    #     ax.scatter(reducedP[ix,0], reducedP[ix,1], s=5, c=mapOfColors[digit], label='Digit '+str(digit), linewidths=0, marker="o")
-    # ax.set_aspect('equal')
-    # plt.legend(markerscale=5.0)
-    # plt.show()
+    if (showScatterPlot):
+        reducedP = P[:, 0:2]
+        fig = plt.figure()
+        ax = fig.add_subplot(111, facecolor='black')
+        
+        for digit in np.unique(T):
+            ix = np.where(T == digit)
+            ax.scatter(reducedP[ix,0], reducedP[ix,1], s=5, c=mapOfColors[digit], label='Digit '+str(digit), linewidths=0, marker="o")
+        ax.set_aspect('equal')
+        plt.legend(markerscale=5.0)
+        plt.show()
 
     return muX, V, P
 
@@ -62,9 +61,22 @@ def pdfLog(x, mu, cvMtx):
     s, logDet = np.linalg.slogdet(cvMtx)
     if s == 1:
         denomPowOfE = np.log(2*np.pi) + logDet*0.5
+    elif s == 0:
+        ('Determinant of cvMtx is 0!')
     else:
-        print('Determinant of cvMtx is 0 or negative!')
+        print('Determinant of cvMtx is negative!')
+
+    return (numerPowOfE-denomPowOfE)
     
+def pdfLogOpt(x, mu, cvMtxInv, logDet):
+
+    diffFromMean = (x - mu)
+    powOfE = diffFromMean.dot(cvMtxInv)
+    powOfE = powOfE.dot(diffFromMean.T)
+    numerPowOfE = -.5 * powOfE
+
+    denomPowOfE = np.log(2*np.pi) + logDet*0.5
+
     return (numerPowOfE-denomPowOfE)
 
 def buildBayesianClassifier(X, T):
@@ -99,24 +111,26 @@ def predictWithBayesian(nByClass, muByClass, cvMtxByClass, classLabels, queries)
     # for each QUERY, compute bayesian numbers and produce prob
     predLabel = []
     predProb = np.zeros(len(queries))
-    for iQuery, xQueryVal in enumerate(queries):
-        
-        #estByClass = [0.]*len(classLabels)
-        estLogByClass = [0.]*len(classLabels)
-        for iClass, labelVal in enumerate(classLabels):
-           estLogByClass[iClass] = pdfLog(xQueryVal, muByClass[iClass], cvMtxByClass[iClass]) + np.log(nByClass[iClass])
-           #estByClass[iClass] = np.exp(estLogByClass[iClass])
-        
-        #probByClass = estByClass / np.sum(estByClass)
-        #likelyClass = np.argmax(probByClass)
-        likelyClass = np.argmax(estLogByClass)
-        
-        predLabel.append(classLabels[likelyClass])
-        #predProb[iQuery] = probByClass[likelyClass]
-        
-        if (np.remainder(iQuery,50) == 0):
-            print('Done with query# ', iQuery) 
-            
+
+    cvMtxInvByClass = np.linalg.inv(cvMtxByClass)
+    sByClass, logDetByClass = np.linalg.slogdet(cvMtxByClass)
+    
+    if (0 in sByClass):
+        print('Determinant of a cvMtx is 0!')
+    elif (-1 in sByClass):
+        print('Determinant of a cvMtx is negative!')
+    else:
+        for iQuery, xQueryVal in enumerate(queries):
+            estLogByClass = [0.]*len(classLabels)
+            for iClass, labelVal in enumerate(classLabels):
+                estLogByClass[iClass] = pdfLogOpt(xQueryVal, muByClass[iClass], cvMtxInvByClass[iClass], logDetByClass[iClass]) + np.log(nByClass[iClass])
+
+            likelyClass = np.argmax(estLogByClass)
+            predLabel.append(classLabels[likelyClass])
+
+            if (np.remainder(iQuery,100) == 0):
+                print('Done with query# ', iQuery)
+
     return predLabel, predProb
 
 
@@ -125,7 +139,6 @@ mapOfEmotion = {0:"Angry", 1:"Disgust", 2:"Fear", 3:"Happy", 4:"Sad", 5:"Surpris
 mapOfColors = {0: [1,0,0,0.5], 1: [0,1,0,0.5], 2: [0,0,1,0.5], 3:[1,1,0,0.5], 4:[0,1,1,0.5], 5:[1,0,1,0.5], 6:[0.5,0.5,0.5,0.5]}
 
 ## Data Loading and Splitting
-#data=pd.read_csv(r"F:\ML_Intro_Python\Project\FaceRecognition.csv")
 data=pd.read_csv(r"D:\python_ML\Project\FaceRecognition.csv")
 
 data=data.drop(columns='Unnamed: 0')
@@ -152,16 +165,22 @@ muTrain, V, PTrain = performPCA(Train_data, Train_labels)
 # 19 gives us accuracy of 32.79%
 # 50 gives us accuracy of 38.31%
 # 100 (after switching to log scale in pdf calc) gives 39.87%
+# 125 -> 40.51%
 # 150 (only predicting label) gives 41.60%
 # 200 gives 42.24%
 # 250 gives 43.02%
+# 275 -> 43.44%
 # 300 gives 43.32%
-# 350 gives 43.80%
-# 375 gives 44.16%
+# 325 -> 44.11%
+# 350 gives 43.80%, 355->44.16%, 358->44.13%, 359->44.08%
+# 360 gives 44.25%, 361->44.22%, 362->44.25%, 363->44.08%, 365->43.94%
+# 375, 380 gives 44.16%
+# 385 fails!
+# 390 gives 20.84% ?
 # 400 gives 23.54%
 # 500 gives 23.01%
 
-nPCDim = 390
+nPCDim = 360
 reducedV = V[0:nPCDim, :]
 
 # try recovering some of the images, to see how they look
@@ -198,4 +217,12 @@ PTest = np.dot(ZTest, reducedV.T)
 predLabelTest, predProbTest = predictWithBayesian(nByClass, muByClass, cvMtxByClass, np.unique(Train_labels), PTest)
 
 res = (predLabelTest==Test_labels)
-print('Accuracy is ', res.sum()/len(Test_labels))
+print('Accuracy over TEST SET is ', res.sum()/len(Test_labels))
+
+# also, predict on the training set with Bayesian classifier
+# 360 PC dimensions-> 76.61%
+nSamplesToTry = 28709
+predLabelTrg, predProbTrg = predictWithBayesian(nByClass, muByClass, cvMtxByClass, np.unique(Train_labels), reducedP[0:nSamplesToTry])
+
+res = (predLabelTrg==Train_labels[0:nSamplesToTry])
+print('Accuracy over TRAINING SET is ', res.sum()/nSamplesToTry)
