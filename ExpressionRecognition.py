@@ -49,24 +49,6 @@ def performPCA(X, T, showScatterPlot=False):
         plt.show()
 
     return muX, V, P
-
-def pdfLog(x, mu, cvMtx):
-    
-    diffFromMean = (x - mu)
-    cvMtxInv = np.linalg.inv(cvMtx)
-    powOfE = diffFromMean.dot(cvMtxInv)
-    powOfE = powOfE.dot(diffFromMean.T)
-    numerPowOfE = -.5 * powOfE
-    
-    s, logDet = np.linalg.slogdet(cvMtx)
-    if s == 1:
-        denomPowOfE = np.log(2*np.pi) + logDet*0.5
-    elif s == 0:
-        ('Determinant of cvMtx is 0!')
-    else:
-        print('Determinant of cvMtx is negative!')
-
-    return (numerPowOfE-denomPowOfE)
     
 def pdfLogOpt(x, mu, cvMtxInv, logDet):
 
@@ -139,7 +121,8 @@ mapOfEmotion = {0:"Angry", 1:"Disgust", 2:"Fear", 3:"Happy", 4:"Sad", 5:"Surpris
 mapOfColors = {0: [1,0,0,0.5], 1: [0,1,0,0.5], 2: [0,0,1,0.5], 3:[1,1,0,0.5], 4:[0,1,1,0.5], 5:[1,0,1,0.5], 6:[0.5,0.5,0.5,0.5]}
 
 ## Data Loading and Splitting
-data=pd.read_csv(r"D:\python_ML\Project\FaceRecognition.csv")
+dataFolderPath = "D:\\python_ML\\Project\\"
+data=pd.read_csv(dataFolderPath + "FaceRecognition.csv")
 
 data=data.drop(columns='Unnamed: 0')
 
@@ -159,6 +142,22 @@ Test_data=Test_data.drop(columns='X1').values
 Train_data = Train_data.astype(dtype=np.uint8)
 Train_labels = Train_labels.astype(dtype=np.uint8)
 
+# AUGMENT THE TRAINING DATA WITH ROTATIONS
+otherDataFiles = ["fer2013_10toleft.csv", "fer2013_10toright.csv", "fer2013_3toleft.csv", "fer2013_3toright.csv", "fer2013_6toleft.csv", "fer2013_6toright.csv"]
+
+nTrgVectors = Train_data.shape[0] 
+for otherDataFile in otherDataFiles:
+    data = pd.read_csv(dataFolderPath + otherDataFile)
+    data = data.values.astype(dtype=np.uint8)
+    
+    newLabels = data[:,0]
+    newData = data[:,1:]
+
+    # 'data' is missing the first training image
+    Train_data = np.vstack( (Train_data, newData[0:nTrgVectors]) ) 
+    Train_labels = np.hstack( (Train_labels, newLabels[0:nTrgVectors]) )
+
+# Peform PCA on the training data
 muTrain, V, PTrain = performPCA(Train_data, Train_labels)
 
 # 2 gives us accuracy of 25.57%
@@ -208,20 +207,35 @@ plt.show()
 # now, get a Bayesian classifier for the training data and labels
 TrainByClass, nByClass, muByClass, cvMtxByClass = buildBayesianClassifier(reducedP, Train_labels)
 
+# now, predict on the PRIVATE test set with Bayesian classifier
 # convert test set into queries (in the form of PCs)
 Test_data = Test_data.astype(dtype=np.uint8)
 ZTest = Test_data - muTrain
 PTest = np.dot(ZTest, reducedV.T)
 
-# now, predict on the test set with Bayesian classifier
 predLabelTest, predProbTest = predictWithBayesian(nByClass, muByClass, cvMtxByClass, np.unique(Train_labels), PTest)
 
 res = (predLabelTest==Test_labels)
-print('Accuracy over TEST SET is ', res.sum()/len(Test_labels))
+print('Accuracy over PRIVATE TEST SET is ', res.sum()/len(Test_labels))
+
+# # now, predict on the PUBLIC test set with Bayesian classifier
+# Test_data=data[data['X2306']=='PublicTest'].drop(columns='X2306')
+# Test_labels=Test_data.iloc[:,0].values
+# Test_data=Test_data.drop(columns='X1').values
+# Test_data = Test_data.astype(dtype=np.uint8)
+# 
+# ZTest = Test_data - muTrain
+# PTest = np.dot(ZTest, reducedV.T)
+# 
+# predLabelTest, predProbTest = predictWithBayesian(nByClass, muByClass, cvMtxByClass, np.unique(Train_labels), PTest)
+# 
+# res = (predLabelTest==Test_labels)
+# print('Accuracy over PUBLIC TEST SET is ', res.sum()/len(Test_labels))
+
 
 # also, predict on the training set with Bayesian classifier
 # 360 PC dimensions-> 76.61%
-nSamplesToTry = 28709
+nSamplesToTry = 28709*7
 predLabelTrg, predProbTrg = predictWithBayesian(nByClass, muByClass, cvMtxByClass, np.unique(Train_labels), reducedP[0:nSamplesToTry])
 
 res = (predLabelTrg==Train_labels[0:nSamplesToTry])
