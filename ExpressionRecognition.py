@@ -6,10 +6,14 @@ import numpy.linalg as LA
 from sklearn.metrics import confusion_matrix
 from imblearn.over_sampling import RandomOverSampler, SMOTE
 from collections import Counter
+from PIL import Image
+import os
 
 # Take a 2304 long vector and plot it as a 48x48 image
 def vectortoimg(v,show=True):
-    plt.imshow(v.reshape(48, 48),interpolation='None', cmap='gray')
+    vLen = len(v)
+    vSide = np.sqrt(vLen).astype(int)
+    plt.imshow(v.reshape(vSide, vSide),interpolation='None', cmap='gray')
     plt.axis('off')
     if show:
         plt.show()
@@ -242,6 +246,8 @@ muTrain, V, PTrain = performPCA(Train_data, Train_labels, showSingleScatter, sho
 # 400 gives 23.54%
 # 500 gives 23.01%
 
+nOrigDim = Train_data.shape[1]
+imgWidth = np.sqrt(nOrigDim).astype(int)
 nPCDim = 360
 reducedV = V[0:nPCDim, :]
 
@@ -312,15 +318,24 @@ if (predictOnTrainingSet):
     
 # OPTIONAL, predict on some random images from team members
 if (predictOnNewData):
-    import matplotlib.image as img
+    teamMemberExprFiles = []
+    # r=root, d=directories, f = files
+    for r, d, f in os.walk(dataFolderPath):
+        for file in f:
+            if '.jpg' in file:
+                teamMemberExprFiles.append(os.path.join(r, file))
     
-    teamMemberExprFiles = ["test_1.jpg", "test_2.jpg", "test_3.jpg", "test_4.jpg", "test_5.jpg", "test_6.jpg"]
     for exprFile in teamMemberExprFiles:
-        imgData = img.imread(dataFolderPath+exprFile)
-        r, g, b = imgData[:,:,0], imgData[:,:,1], imgData[:,:,2]
-        gray = 0.2989 * r + 0.5870 * g + 0.1140 * b
+        pic = Image.open(exprFile)
+        pic = pic.resize((imgWidth,imgWidth), resample=Image.LANCZOS)
+        imgData = np.array(pic)
+        if (len(imgData.shape) == 3) and (imgData.shape[2] >= 3):
+            r, g, b = imgData[:,:,0], imgData[:,:,1], imgData[:,:,2]
+            gray = 0.2989 * r + 0.5870 * g + 0.1140 * b
+        else:
+            gray = imgData
         gray = gray.flatten()
-        if (len(gray) == 48*48):
+        if (len(gray) == nOrigDim):
             ZTest = gray - muTrain
             PTest = np.dot(ZTest, reducedV.T)
             PTest = PTest.reshape((1, len(PTest)))
@@ -328,4 +343,3 @@ if (predictOnNewData):
             print(exprFile, ' Predicted Emotion is', mapOfEmotion[predLabelTest[0]])
         else:
             print(exprFile, ' is not the right size!')
-        
