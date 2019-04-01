@@ -158,10 +158,11 @@ plotLoc = {0: 241, 1: 242, 2: 243, 3:244, 4:245, 5:246, 6:247}
 balanceTheTrainingSet = False
 augmentRotatedImages = False
 trainOnOriginalComponents = False
-showSingleScatter = True
-showSeparateScatter = True
+showSingleScatter = False
+showSeparateScatter = False
 predictOnPublicTestSet = False
-predictOnTrainingSet = True
+predictOnTrainingSet = False
+predictOnNewData = True
 
 ## Data Loading and Splitting
 dataFolderPath = "D:\\python_ML\\Project\\"
@@ -308,3 +309,23 @@ if (predictOnTrainingSet):
     predLabelTrg, predProbTrg = predictWithBayesian(nByClass, muByClass, cvMtxByClass, np.unique(Train_labels), reducedP[0:nSamplesToTry])
     res = (predLabelTrg==Train_labels[0:nSamplesToTry])
     print('Accuracy over TRAINING SET is ', res.sum()/nSamplesToTry)
+    
+# OPTIONAL, predict on some random images from team members
+if (predictOnNewData):
+    import matplotlib.image as img
+    
+    teamMemberExprFiles = ["test_1.jpg", "test_2.jpg", "test_3.jpg", "test_4.jpg", "test_5.jpg", "test_6.jpg"]
+    for exprFile in teamMemberExprFiles:
+        imgData = img.imread(dataFolderPath+exprFile)
+        r, g, b = imgData[:,:,0], imgData[:,:,1], imgData[:,:,2]
+        gray = 0.2989 * r + 0.5870 * g + 0.1140 * b
+        gray = gray.flatten()
+        if (len(gray) == 48*48):
+            ZTest = gray - muTrain
+            PTest = np.dot(ZTest, reducedV.T)
+            PTest = PTest.reshape((1, len(PTest)))
+            predLabelTest, predProbTest = predictWithBayesian(nByClass, muByClass, cvMtxByClass, np.unique(Train_labels), PTest)
+            print(exprFile, ' Predicted Emotion is', mapOfEmotion[predLabelTest[0]])
+        else:
+            print(exprFile, ' is not the right size!')
+        
