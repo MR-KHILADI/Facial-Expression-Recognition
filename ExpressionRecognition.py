@@ -3,15 +3,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import random
 import numpy.linalg as LA
-from sklearn.metrics import confusion_matrix
-from imblearn.over_sampling import RandomOverSampler, SMOTE
+#from sklearn.metrics import confusion_matrix
+#from imblearn.over_sampling import RandomOverSampler, SMOTE
 from collections import Counter
-from PIL import Image
+#from PIL import Image
 import os
-
-#del buildHistogramClassifier
-#del predictWithHistogram
-from Classifier_Hist import (buildHistogramClassifier, predictWithHistogram)
 
 # Take a 2304 long vector and plot it as a 48x48 image
 def vectortoimg(v,show=True):
@@ -155,6 +151,74 @@ def predictWithBayesian(nByClass, muByClass, cvMtxByClass, classLabels, queries)
             #if (np.remainder(iQuery,1000) == 0):
                 #print('Done with query# ', iQuery)
 
+    return predLabel, predProb
+
+# Given a feature's value, the feature's range, and total number of bins, 
+# identify the bin to which that particular value belongs
+def binForValue(xValue, B, xmin, xmax):
+    computedBin = np.round((B-1)*(xValue-xmin)/(xmax-xmin)).astype('int32')
+    return np.clip(computedBin, 0, (B-1))
+
+# Build a sparse histogram (instead of n-dim array, use a dictionary that only 
+# stores populated bins)
+def buildHistogramClassifier(X, T, B, verbose=False):
+    hist = {} # an empty dictionary, key is set of indices, value is count for each class at that position
+    
+    nSamples = X.shape[0]
+    nFeatures = X.shape[1]
+    nDistinctClasses = len(np.unique(T))
+    minVals = np.amin(X, axis=0) # find mins for each column
+    maxVals = np.amax(X, axis=0)
+    
+    binIndices = np.zeros((nSamples, nFeatures), dtype=np.uint8)
+    for iFeature in np.arange(nFeatures):
+        binIndices[:,iFeature] = binForValue(X[:,iFeature], B, minVals[iFeature], maxVals[iFeature])
+
+    for i, binIndexSet in enumerate(binIndices):
+        # binIndexSet is the key into the dict
+        # if it already exists, get the value
+        # else create a new value (vector of length nClass)
+        # based on G[i], increment corresponding position in vector
+        tupleOfIndices = tuple(binIndexSet)
+        classIndex = T[i] # since labels are 0-based numbers
+        if tupleOfIndices not in hist.keys():
+            hist[tupleOfIndices] = np.zeros((nDistinctClasses), dtype=np.uint16)
+        hist[tupleOfIndices][classIndex] += 1
+        
+        if (verbose):
+            if (hist[tupleOfIndices][classIndex] > 8000):
+                print('Nearing the limit for ', classIndex)
+            if (np.remainder(i, 1000) == 0):
+                print('Done with sample# ', i)
+
+    return hist, minVals, maxVals
+
+# Based on QUERIES, grab numbers from histograms and determine most likely class
+def predictWithHistogram(H, B, minVals, maxVals, nDistinctClasses, queries):
+    predLabel = []
+    predProb = np.zeros(len(queries))
+    
+    nQueries = queries.shape[0]
+    nFeatures = queries.shape[1]
+        
+    binIndices = np.zeros((nQueries, nFeatures), dtype=np.uint8)
+    for iFeature in np.arange(nFeatures):
+        binIndices[:,iFeature] = binForValue(queries[:,iFeature], B, minVals[iFeature], maxVals[iFeature])
+
+    for i, binIndexSet in enumerate(binIndices):
+        # binIndexSet is the key into the dict
+        # if it already exists, get the value
+        # else create a new value (vector of length nClass)
+        # based on G[i], increment corresponding position in vector
+        tupleOfIndices = tuple(binIndexSet)
+        
+        if tupleOfIndices in H.keys():
+            countForClasses = H[tupleOfIndices]
+            likelyClass = np.argmax(countForClasses)
+        else:
+            likelyClass = -1
+        predLabel.append(likelyClass)
+        
     return predLabel, predProb
 
 
@@ -309,22 +373,19 @@ PTest = np.dot(ZTest, reducedV.T)
 
 predLabelTest, predProbTest = predictWithBayesian(nByClass, muByClass, cvMtxByClass, np.unique(Train_labels), PTest)
 
-testResCM = confusion_matrix(Test_labels, predLabelTest)
-print('Confusion matrix is:\n', testResCM)
-acc = testResCM.diagonal().sum() / testResCM.sum()
+# testResCM = confusion_matrix(Test_labels, predLabelTest)
+# print('Confusion matrix is:\n', testResCM)
+# acc = testResCM.diagonal().sum() / testResCM.sum()
+# print('Accuracy over PRIVATE TEST SET is ', acc)
+# print('PPV values for the classes are:', testResCM.diagonal() / testResCM.sum(axis=0))
+# print('Sensitivity values for the classes are:', testResCM.diagonal() / testResCM.sum(axis=1))
+acc = (Test_labels==predLabelTest).sum()/len(Test_labels)
 print('Accuracy over PRIVATE TEST SET is ', acc)
-print('PPV values for the classes are:', testResCM.diagonal() / testResCM.sum(axis=0))
-print('Sensitivity values for the classes are:', testResCM.diagonal() / testResCM.sum(axis=1))
 
 # OPTIONAL, determine accuracy as number of PCs changes
 if (determineAccuracyVariation):
-    nPCDim = 2
-    nPCList = []
-    cmList = []
-    accList = []
-    ppvList = []
-    sensList = []
-    while(nPCDim < nOrigDim):
+    nPCList, cmList, accList, ppvList, sensList = [], [], [], [], []
+    for nPCDim in np.arange(2, nOrigDim, 23):
         reducedV = V[0:nPCDim, :]
         reducedP = PTrain[:, 0:nPCDim]
     
@@ -338,20 +399,29 @@ if (determineAccuracyVariation):
         
         predLabelTest, predProbTest = predictWithBayesian(nByClass, muByClass, cvMtxByClass, np.unique(Train_labels), PTest)
         
+        nPCList.append(nPCDim)
+        # check if we were able to predict successfully (as at higher dimensions
+        # the cov. matx gets unstable and we get no predictions back)
         if (len(predLabelTest) == len(Test_labels)):
-            nPCList.append(nPCDim)
-            testResCM = confusion_matrix(Test_labels, predLabelTest)
-            #print('Confusion matrix is:\n', testResCM)
-            cmList.append(testResCM)
-            acc = testResCM.diagonal().sum() / testResCM.sum()
+            # testResCM = confusion_matrix(Test_labels, predLabelTest)
+            # #print('Confusion matrix is:\n', testResCM)
+            # cmList.append(testResCM)
+            # acc = testResCM.diagonal().sum() / testResCM.sum()
+            acc = (Test_labels==predLabelTest).sum()/len(Test_labels)
             print('Accuracy for ', nPCDim, ' is ', acc)
             accList.append(acc)
             #print('PPV values for the classes are:', testResCM.diagonal() / testResCM.sum(axis=0))
             #ppvList.append(testResCM.diagonal() / testResCM.sum(axis=0))
             #print('Sensitivity values for the classes are:', testResCM.diagonal() / testResCM.sum(axis=1))
             #sensList.append(testResCM.diagonal() / testResCM.sum(axis=1))
+        else:
+            accList.append(0.0)
         
-        nPCDim += 23
+        accArr = (np.array(accList) * 100.).round(2)
+        plt.plot(nPCList, accArr, 'go-', linewidth=1, markersize=5)
+        plt.xlabel('Number of PCs included in training')
+        plt.ylabel('Accuracy')
+        plt.show()
 
 # OPTIONAL, predict on the PUBLIC test set with Bayesian classifier
 if (predictOnPublicTestSet):
