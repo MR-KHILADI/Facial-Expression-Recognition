@@ -12,11 +12,14 @@ from keras.layers.convolutional import Conv2D
 from keras.layers.convolutional import MaxPooling2D
 from keras.utils import np_utils
 from keras import backend as K
-K.set_image_dim_ordering('th')
+K.set_image_dim_ordering('tf')
 
 # Create a model with a couple of layers
 def fully_connected_model():
     model = Sequential()
+    if (isCNN):
+        model.add(Conv2D(1, kernel_size=(10, 10), strides=(1, 1), activation='relu', input_shape=input_shape))
+        model.add(Flatten())
     model.add(Dense(numPixels, input_dim=numPixels, kernel_initializer='normal', activation='tanh'))
     model.add(Dense(numClasses, kernel_initializer='normal', activation='softmax'))
     model.compile(loss='mean_squared_error', optimizer='sgd', metrics=['accuracy'])
@@ -87,6 +90,7 @@ mapOfColors = {0: [1,0,0,0.5], 1: [0,1,0,0.5], 2: [0,0,1,0.5], 3:[1,1,0,0.5], 4:
 plotLoc = {0: 241, 1: 242, 2: 243, 3:244, 4:245, 5:246, 6:247}
 
 trainOnPCs = False
+isCNN = True
 
 ## Data Loading and Splitting
 dataFolderPath = "D:\\python_ML\\Project\\"
@@ -114,6 +118,8 @@ Train_labels = Train_labels.astype(dtype=np.uint8)
 Val_labels = Val_labels.astype(dtype=np.uint8)
 Test_labels = Test_labels.astype(dtype=np.uint8)
 
+imgX, imgY = 48, 48
+
 # Preprocess the training data
 if (trainOnPCs):
     nPCDim = 300
@@ -140,6 +146,14 @@ if (trainOnPCs):
     # Val_x = (Val_x - low) / (high-low)
     # Test_x = (Test_x - low) / (high-low)
 else:
+    
+    if (isCNN):
+        Train_data = Train_data.reshape(Train_data.shape[0], imgX, imgY, 1)
+        Val_data = Val_data.reshape(Val_data.shape[0], imgX, imgY, 1)
+        Test_data = Test_data.reshape(Test_data.shape[0], imgX, imgY, 1)
+        
+        input_shape = (imgX, imgY, 1)
+    
     Train_x = Train_data/255
     Val_x = Val_data/255
     Test_x = Test_data/255
@@ -149,7 +163,7 @@ Train_y = np_utils.to_categorical(Train_labels)
 Val_y = np_utils.to_categorical(Val_labels)
 Test_y = np_utils.to_categorical(Test_labels)
 
-numPixels = Train_x.shape[1]
+numPixels = imgX * imgY
 numClasses = Train_y.shape[1]
 # instantiate a model
 mdl = fully_connected_model()

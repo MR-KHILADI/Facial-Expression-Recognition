@@ -9,6 +9,10 @@ from collections import Counter
 from PIL import Image
 import os
 
+#del buildHistogramClassifier
+#del predictWithHistogram
+from Classifier_Hist import (buildHistogramClassifier, predictWithHistogram)
+
 # Take a 2304 long vector and plot it as a 48x48 image
 def vectortoimg(v,show=True):
     vLen = len(v)
@@ -148,8 +152,8 @@ def predictWithBayesian(nByClass, muByClass, cvMtxByClass, classLabels, queries)
             likelyClass = np.argmax(estLogByClass)
             predLabel.append(classLabels[likelyClass])
 
-            if (np.remainder(iQuery,1000) == 0):
-                print('Done with query# ', iQuery)
+            #if (np.remainder(iQuery,1000) == 0):
+                #print('Done with query# ', iQuery)
 
     return predLabel, predProb
 
@@ -164,6 +168,8 @@ augmentRotatedImages = False
 trainOnOriginalComponents = False
 showSingleScatter = False
 showSeparateScatter = False
+tryHistogramClassifier = False
+determineAccuracyVariation = True
 predictOnPublicTestSet = False
 predictOnTrainingSet = False
 predictOnNewData = True
@@ -184,6 +190,7 @@ Test_data=Test_data.drop(columns='X1').values
 # downsample from 64bit int to an 8bit uint
 Train_data = Train_data.astype(dtype=np.uint8)
 Train_labels = Train_labels.astype(dtype=np.uint8)
+Test_data = Test_data.astype(dtype=np.uint8)
 
 if (balanceTheTrainingSet):
     ros = RandomOverSampler(random_state=0)
@@ -273,12 +280,30 @@ for row in range(nrows):
         vectortoimg(xRec[nImgToDraw], show=False)
 plt.show()
 
+if (tryHistogramClassifier):
+    # 32,4 -> 0.1582613541376428 
+    # 8,14 -> 0.12120367790470883
+    accMtx = np.zeros((30,15), dtype=float)
+    ZTest = Test_data - muTrain
+
+    for nBin in np.arange(2,26,1):
+        for nPC in np.arange(2,12,1):
+            H, minVals, maxVals = buildHistogramClassifier(PTrain[:,0:nPC], Train_labels, nBin)
+
+            PTest = np.dot(ZTest, V[0:nPC,:].T)
+            predLabelTest, predProbTest = predictWithHistogram(H, nBin, minVals, maxVals, len(np.unique(Train_labels)), PTest)
+
+            testResCM = confusion_matrix(Test_labels, predLabelTest)
+            #print('Confusion matrix is:\n', testResCM)
+            acc = testResCM.diagonal().sum() / testResCM.sum()
+            print('Accuracy for ', nBin, '-', nPC, ' is ', acc)
+            accMtx[nBin][nPC] = round(acc*100,2)
+
 # now, get a Bayesian classifier for the training data and labels
 TrainByClass, nByClass, muByClass, cvMtxByClass = buildBayesianClassifier(reducedP, Train_labels)
 
 # now, predict on the PRIVATE test set with Bayesian classifier
 # convert test set into queries (in the form of PCs)
-Test_data = Test_data.astype(dtype=np.uint8)
 ZTest = Test_data - muTrain
 PTest = np.dot(ZTest, reducedV.T)
 
@@ -290,6 +315,43 @@ acc = testResCM.diagonal().sum() / testResCM.sum()
 print('Accuracy over PRIVATE TEST SET is ', acc)
 print('PPV values for the classes are:', testResCM.diagonal() / testResCM.sum(axis=0))
 print('Sensitivity values for the classes are:', testResCM.diagonal() / testResCM.sum(axis=1))
+
+# OPTIONAL, determine accuracy as number of PCs changes
+if (determineAccuracyVariation):
+    nPCDim = 2
+    nPCList = []
+    cmList = []
+    accList = []
+    ppvList = []
+    sensList = []
+    while(nPCDim < nOrigDim):
+        reducedV = V[0:nPCDim, :]
+        reducedP = PTrain[:, 0:nPCDim]
+    
+        # now, get a Bayesian classifier for the training data and labels
+        TrainByClass, nByClass, muByClass, cvMtxByClass = buildBayesianClassifier(reducedP, Train_labels)
+        
+        # now, predict on the PRIVATE test set with Bayesian classifier
+        # convert test set into queries (in the form of PCs)
+        #ZTest = Test_data - muTrain
+        PTest = np.dot(ZTest, reducedV.T)
+        
+        predLabelTest, predProbTest = predictWithBayesian(nByClass, muByClass, cvMtxByClass, np.unique(Train_labels), PTest)
+        
+        if (len(predLabelTest) == len(Test_labels)):
+            nPCList.append(nPCDim)
+            testResCM = confusion_matrix(Test_labels, predLabelTest)
+            #print('Confusion matrix is:\n', testResCM)
+            cmList.append(testResCM)
+            acc = testResCM.diagonal().sum() / testResCM.sum()
+            print('Accuracy for ', nPCDim, ' is ', acc)
+            accList.append(acc)
+            #print('PPV values for the classes are:', testResCM.diagonal() / testResCM.sum(axis=0))
+            #ppvList.append(testResCM.diagonal() / testResCM.sum(axis=0))
+            #print('Sensitivity values for the classes are:', testResCM.diagonal() / testResCM.sum(axis=1))
+            #sensList.append(testResCM.diagonal() / testResCM.sum(axis=1))
+        
+        nPCDim += 23
 
 # OPTIONAL, predict on the PUBLIC test set with Bayesian classifier
 if (predictOnPublicTestSet):
