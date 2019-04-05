@@ -6,7 +6,7 @@ import numpy.linalg as LA
 #from sklearn.metrics import confusion_matrix
 #from imblearn.over_sampling import RandomOverSampler, SMOTE
 from collections import Counter
-#from PIL import Image
+from PIL import Image
 import os
 
 # Take a 2304 long vector and plot it as a 48x48 image
@@ -136,9 +136,9 @@ def predictWithBayesian(nByClass, muByClass, cvMtxByClass, classLabels, queries)
     sByClass, logDetByClass = np.linalg.slogdet(cvMtxByClass)
     
     if (0 in sByClass):
-        print('Determinant of a cvMtx is 0!')
+        print('Determinant of these cvMtx is 0! ', np.where(sByClass==0)[0])
     elif (-1 in sByClass):
-        print('Determinant of a cvMtx is negative!')
+        print('Determinant of these cvMtx is negative! ', np.where(sByClass==-1)[0])
     else:
         for iQuery, xQueryVal in enumerate(queries):
             estLogByClass = [0.]*len(classLabels)
@@ -233,10 +233,12 @@ trainOnOriginalComponents = False
 showSingleScatter = False
 showSeparateScatter = False
 tryHistogramClassifier = False
-determineAccuracyVariation = True
+performValidation = True
+determineAccuracyVariation = False
 predictOnPublicTestSet = False
 predictOnTrainingSet = False
-predictOnNewData = True
+predictOnNewDataJPEG = False
+predictOnNewDataCSV = True
 
 ## Data Loading and Splitting
 dataFolderPath = "D:\\python_ML\\Project\\"
@@ -382,6 +384,31 @@ predLabelTest, predProbTest = predictWithBayesian(nByClass, muByClass, cvMtxByCl
 acc = (Test_labels==predLabelTest).sum()/len(Test_labels)
 print('Accuracy over PRIVATE TEST SET is ', acc)
 
+# OPTIONAL, perform 80/20 splits and see if we can pick a better classifier!
+if (performValidation):
+    valP = reducedP[:,:300] # only include the first 120 PCs
+        # crashes freq. with 360 PCs, as it appears that the 
+        # CovMtx for class#1, which has less samples, has a negative determinant!
+
+    # TBD: keep track of the best model!!
+    for attempt in np.arange(0, 10, 1):
+        rndInd = np.random.permutation(reducedP.shape[0])
+        nTrgSize = int(0.8*reducedP.shape[0])
+        trgInd, testInd = rndInd[:nTrgSize], rndInd[nTrgSize:]
+
+        # randomly split training data 80/20
+        # use 80 for training, and test on 20
+        rndTrgData, rndTestData = valP[trgInd], valP[testInd]
+        rndTrgLabels, rndTestLabels = Train_labels[trgInd], Train_labels[testInd]
+
+        # now, get a Bayesian classifier for the training data and labels
+        TrainByClass, nByClass, muByClass, cvMtxByClass = buildBayesianClassifier(rndTrgData, rndTrgLabels)
+
+        predLabelTest, predProbTest = predictWithBayesian(nByClass, muByClass, cvMtxByClass, np.unique(Train_labels), rndTestData)
+        if (len(predLabelTest) == len(rndTestLabels)):
+            acc = (rndTestLabels==predLabelTest).sum()/len(rndTestLabels)
+            print('Accuracy over PRIVATE TEST SET is ', acc)
+
 # OPTIONAL, determine accuracy as number of PCs changes
 if (determineAccuracyVariation):
     nPCList, cmList, accList, ppvList, sensList = [], [], [], [], []
@@ -447,26 +474,32 @@ if (predictOnTrainingSet):
     predLabelTrg, predProbTrg = predictWithBayesian(nByClass, muByClass, cvMtxByClass, np.unique(Train_labels), reducedP[0:nSamplesToTry])
     res = (predLabelTrg==Train_labels[0:nSamplesToTry])
     print('Accuracy over TRAINING SET is ', res.sum()/nSamplesToTry)
-    
+
 # OPTIONAL, predict on some random images from team members
-if (predictOnNewData):
+imgFolder = r"D:\python_ML\Project\IMAGES_TME"
+grayWith3Channels = True # with all 3 channels having same value
+if (predictOnNewDataJPEG):
     teamMemberExprFiles = []
     # r=root, d=directories, f = files
-    for r, d, f in os.walk(dataFolderPath):
+    for r, d, f in os.walk(imgFolder):
         for file in f:
             if '.jpg' in file:
                 teamMemberExprFiles.append(os.path.join(r, file))
-    
+
     for exprFile in teamMemberExprFiles:
         pic = Image.open(exprFile)
         pic = pic.resize((imgWidth,imgWidth), resample=Image.LANCZOS)
         imgData = np.array(pic)
         if (len(imgData.shape) == 3) and (imgData.shape[2] >= 3):
-            r, g, b = imgData[:,:,0], imgData[:,:,1], imgData[:,:,2]
-            gray = 0.2989 * r + 0.5870 * g + 0.1140 * b
+            if grayWith3Channels:
+                gray = imgData[:,:,0]
+            else:
+                r, g, b = imgData[:,:,0], imgData[:,:,1], imgData[:,:,2]
+                gray = 0.2989 * r + 0.5870 * g + 0.1140 * b
         else:
             gray = imgData
         gray = gray.flatten()
+        vectortoimg(gray)
         if (len(gray) == nOrigDim):
             ZTest = gray - muTrain
             PTest = np.dot(ZTest, reducedV.T)
@@ -475,3 +508,19 @@ if (predictOnNewData):
             print(exprFile, ' Predicted Emotion is', mapOfEmotion[predLabelTest[0]])
         else:
             print(exprFile, ' is not the right size!')
+
+if (predictOnNewDataCSV):
+    new_data = pd.read_csv(imgFolder + r"\newPictures.csv")
+    
+    new_labels = new_data.iloc[0:50,0].values # extract the labels, excl 'others'
+    new_labels = new_labels.astype(np.uint8)
+
+    new_data = new_data.iloc[0:50,1:2305].values # remove labels from data
+    new_data = new_data.astype(dtype=np.uint8)
+
+    ZTest = new_data - muTrain
+    PTest = np.dot(ZTest, reducedV.T)
+    #PTest = PTest.reshape((1, len(PTest)))
+    predLabelTest, predProbTest = predictWithBayesian(nByClass, muByClass, cvMtxByClass, np.unique(Train_labels), PTest)
+    print('Accuracy on new images is ', (new_labels==predLabelTest).sum()/len(new_labels))
+    #print(exprFile, ' Predicted Emotion is', mapOfEmotion[predLabelTest[0]])
