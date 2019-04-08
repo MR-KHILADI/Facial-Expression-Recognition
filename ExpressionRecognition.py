@@ -233,7 +233,7 @@ trainOnOriginalComponents = False
 showSingleScatter = False
 showSeparateScatter = False
 tryHistogramClassifier = False
-performValidation = True
+performValidation = False
 determineAccuracyVariation = False
 predictOnPublicTestSet = False
 predictOnTrainingSet = False
@@ -391,7 +391,8 @@ if (performValidation):
         # CovMtx for class#1, which has less samples, has a negative determinant!
 
     # TBD: keep track of the best model!!
-    for attempt in np.arange(0, 10, 1):
+    valAccList = []
+    for attempt in np.arange(0, 50, 1):
         rndInd = np.random.permutation(reducedP.shape[0])
         nTrgSize = int(0.8*reducedP.shape[0])
         trgInd, testInd = rndInd[:nTrgSize], rndInd[nTrgSize:]
@@ -408,6 +409,7 @@ if (performValidation):
         if (len(predLabelTest) == len(rndTestLabels)):
             acc = (rndTestLabels==predLabelTest).sum()/len(rndTestLabels)
             print('Accuracy over PRIVATE TEST SET is ', acc)
+            valAccList.append(acc)
 
 # OPTIONAL, determine accuracy as number of PCs changes
 if (determineAccuracyVariation):
@@ -524,3 +526,14 @@ if (predictOnNewDataCSV):
     predLabelTest, predProbTest = predictWithBayesian(nByClass, muByClass, cvMtxByClass, np.unique(Train_labels), PTest)
     print('Accuracy on new images is ', (new_labels==predLabelTest).sum()/len(new_labels))
     #print(exprFile, ' Predicted Emotion is', mapOfEmotion[predLabelTest[0]])
+    
+    fig = plt.figure()
+    pltDict = {4:(2,6,1), 1:(2,6,2), 7:(2,6,3), 13:(2,6,4), 14:(2,6,5), 18:(2,6,6), 23:(2,6,7), 30:(2,6,8), 34:(2,6,9), 38:(2,6,10),  46:(2,6,11)}
+    imgPos = 1
+    for nImgToDraw in pltDict.keys():
+        ax = fig.add_subplot(2,6,imgPos)
+        imgPos = imgPos + 1
+        vectortoimg(new_data[nImgToDraw], show=False)
+        title = 'Label: ' + mapOfEmotion[new_labels[nImgToDraw]] + '\nPredicted: ' + mapOfEmotion[predLabelTest[nImgToDraw]]
+        ax.set_title(title)
+    plt.show()
