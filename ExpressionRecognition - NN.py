@@ -20,6 +20,7 @@ def fully_connected_model():
     if (isCNN):
         model.add(Conv2D(1, kernel_size=(10, 10), strides=(1, 1), activation='relu', input_shape=input_shape))
         model.add(Flatten())
+    #model.add(Dense(numPixels, input_dim=numPixels, kernel_initializer='normal', activation='tanh'))
     model.add(Dense(numPixels, input_dim=numPixels, kernel_initializer='normal', activation='tanh'))
     model.add(Dense(numClasses, kernel_initializer='normal', activation='softmax'))
     model.compile(loss='mean_squared_error', optimizer='sgd', metrics=['accuracy'])
@@ -90,7 +91,7 @@ mapOfColors = {0: [1,0,0,0.5], 1: [0,1,0,0.5], 2: [0,0,1,0.5], 3:[1,1,0,0.5], 4:
 plotLoc = {0: 241, 1: 242, 2: 243, 3:244, 4:245, 5:246, 6:247}
 
 trainOnPCs = False
-isCNN = True
+isCNN = False
 
 ## Data Loading and Splitting
 dataFolderPath = "D:\\python_ML\\Project\\"
@@ -122,7 +123,7 @@ imgX, imgY = 48, 48
 
 # Preprocess the training data
 if (trainOnPCs):
-    nPCDim = 300
+    nPCDim = 360
     # Peform PCA on the training data
     muTrain, V, PTrain = performPCA(Train_data, Train_labels, False, False)
     reducedV = V[0:nPCDim, :]
@@ -145,6 +146,8 @@ if (trainOnPCs):
     # Train_x = (Train_x - low) / (high-low)
     # Val_x = (Val_x - low) / (high-low)
     # Test_x = (Test_x - low) / (high-low)
+    
+    numPixels = nPCDim
 else:
     
     if (isCNN):
@@ -157,20 +160,21 @@ else:
     Train_x = Train_data/255
     Val_x = Val_data/255
     Test_x = Test_data/255
+    
+    numPixels = imgX * imgY
 
 # Keslerize the target labels
 Train_y = np_utils.to_categorical(Train_labels)
 Val_y = np_utils.to_categorical(Val_labels)
 Test_y = np_utils.to_categorical(Test_labels)
 
-numPixels = imgX * imgY
 numClasses = Train_y.shape[1]
 # instantiate a model
 mdl = fully_connected_model()
 
 # fit the model to the training data (provide a validation set as well)
 np.random.seed(0)
-mdl.fit(Train_x, Train_y, validation_data=(Val_x, Val_y), epochs=100, batch_size=32, verbose=2)
+mdl.fit(Train_x, Train_y, validation_data=(Val_x, Val_y), epochs=100, batch_size=100, verbose=2)
 
 scores = mdl.evaluate(Test_x, Test_y, verbose=0)
 print('Accuracy on the PRIVATE TEST set is ', scores[1])
